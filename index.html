@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="Batman: Arkham VR from Rocksteady Studios. Coming October 2016." />
+    <meta name="keywords" content="Batman, Arkham, PlayStation, Virtual Reality, Arkham Asylum, Arkham City" />
+    <meta property="og:title" content="Batman: Arkham VR from Rocksteady Studios. Coming October 2016." />
+    <meta property="og:image" content="https://www.batmanarkhamvr.com/themes/frontend/kinks/assets/images/share.jpg" />
+    <meta property="og:description"
+        content="Batman: Arkham VR immerses you in the Dark Knight's Universe and redefines what it means to Be the Batman. Experience Gotham City through the eyes of the World's Greatest Detective in an all new Arkham mystery. Think like Batman. Utilise his legendary gadgets in Virtual Reality to unravel a plot that threatens the lives of Batman's closest allies." />
+    <meta property="og:site_name" content="Batman Arkham VR" />
+    <meta itemprop="name" content="Batman: Arkham VR from Rocksteady Studios. Coming October 2016." />
+    <meta itemprop="image" content="https://www.batmanarkhamvr.com/themes/frontend/kinks/assets/images/share.jpg" />
+    <meta name="csrf-token" content="LB6PbVbvVThKiBFMsYcsOKx0oTTs1nY05hyf8b5U" />
+    <title>Batman: Arkham VR from Rocksteady Studios. Coming October 2016.</title>
+
+    <link href='https://fonts.googleapis.com/css?family=Open+Sans+Condensed:300,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="./themes/frontend/kinks/assets/css/normalize.min.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="./themes/frontend/kinks/assets/css/layout.css" media="screen">
+
+    <link rel="icon" type="image/x-icon" href="./themes/frontend/kinks/assets/images/favicon.ico">
+    <link rel="Shortcut Icon" type="image/ico" href="./themes/frontend/kinks/assets/images/favicon.ico">
+
+    <meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=1">
+
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/jquery-2.2.4.min.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/TweenMax.min.js"></script>
+
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/three.min.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/Detector.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/loaders/OBJLoader.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/GPUComputationRenderer.js"></script>
+
+    <!-- shader for bat's position -->
+    <script id="batFragShaderPosition" type="x-shader/x-fragment">
+            uniform float time;
+            uniform float delta;
+
+            void main() {
+                vec2 uv = gl_FragCoord.xy / resolution.xy;
+                vec4 tmpPos = texture2D( texturePosition, uv );
+                vec3 position = tmpPos.xyz;
+                vec3 velocity = texture2D( textureVelocity, uv ).xyz;
+
+                float phase = tmpPos.w;
+
+                phase = mod( ( phase + delta +
+                    length( velocity.xz ) * delta * 3. +
+                    max( velocity.y, 0.0 ) * delta * 6. ), 62.83 );
+
+                gl_FragColor = vec4( position + velocity * delta * 15. , phase );
+            }
+        </script>
+
+    <!-- shader for bat's velocity -->
+    <script id="batFragShaderVelocity" type="x-shader/x-fragment">
+            uniform float time;
+            uniform float testing;
+            uniform float delta; // about 0.016
+            uniform float seperationDistance;   // 20
+            uniform float alignmentDistance;    // 20
+            uniform float cohesionDistance;     // 20
+            uniform float freedomFactor;        // 0.75
+            uniform vec3 predator;
+
+            const float width = resolution.x;
+            const float height = resolution.y;
+
+            const float PI = 3.141592653589793;
+            const float PI_2 = PI * 2.0;
+            // const float VISION = PI * 0.55;
+
+            float zoneRadius = 40.0;
+            float zoneRadiusSquared = 1600.0;
+
+            float separationThresh = 0.45;
+            float alignmentThresh = 0.65;
+
+            const float UPPER_BOUNDS = BOUNDS;
+            const float LOWER_BOUNDS = -UPPER_BOUNDS;
+
+            const float SPEED_LIMIT = 6.0;
+
+            float rand(vec2 co){
+                return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+            }
+
+            void main() {
+
+                zoneRadius = seperationDistance + alignmentDistance + cohesionDistance;
+                separationThresh = seperationDistance / zoneRadius;
+                alignmentThresh = ( seperationDistance + alignmentDistance ) / zoneRadius;
+                zoneRadiusSquared = zoneRadius * zoneRadius;
+
+                vec2 uv = gl_FragCoord.xy / resolution.xy;
+                vec3 birdPosition, birdVelocity;
+
+                vec3 selfPosition = texture2D( texturePosition, uv ).xyz;
+                vec3 selfVelocity = texture2D( textureVelocity, uv ).xyz;
+
+                float dist;
+                vec3 dir; // direction
+                float distSquared;
+
+                float seperationSquared = seperationDistance * seperationDistance;
+                float cohesionSquared = cohesionDistance * cohesionDistance;
+
+                float f;
+                float percent;
+
+                vec3 velocity = selfVelocity;
+
+                float limit = SPEED_LIMIT;
+
+                dir = predator * UPPER_BOUNDS - selfPosition;
+                dir.z = 0.;
+                // dir.z *= 0.6;
+                dist = length( dir );
+                distSquared = dist * dist;
+
+                float preyRadius = 150.0;
+                float preyRadiusSq = preyRadius * preyRadius;
+
+                // move bats away from predator
+                if (dist < preyRadius) {
+
+                    f = ( distSquared / preyRadiusSq - 1.0 ) * delta * 100.;
+                    velocity += normalize( dir ) * f;
+                    limit += 5.0;
+                }
+                
+                // if (testing == 0.0) {}
+                // if ( rand( uv + time ) < freedomFactor ) {}
+
+                // Attract flocks to the center
+                vec3 central = vec3( 0., 0., 0. );
+                dir = selfPosition - central;
+                dist = length( dir );
+
+                dir.y *= 2.5;
+                velocity -= normalize( dir ) * delta * 5.;
+
+                for (float y=0.0;y<height;y++) {
+                    for (float x=0.0;x<width;x++) {
+
+                        vec2 ref = vec2( x + 0.5, y + 0.5 ) / resolution.xy;
+                        birdPosition = texture2D( texturePosition, ref ).xyz;
+
+                        dir = birdPosition - selfPosition;
+                        dist = length(dir);
+
+                        if (dist < 0.0001) continue;
+
+                        distSquared = dist * dist;
+
+                        if (distSquared > zoneRadiusSquared ) continue;
+
+                        percent = distSquared / zoneRadiusSquared;
+
+                        if ( percent < separationThresh ) { // low
+                            // Separation - Move apart for comfort
+                            f = (separationThresh / percent - 1.0) * delta;
+                            velocity -= normalize(dir) * f;
+                        } else if ( percent < alignmentThresh ) { // high
+                            // Alignment - fly the same direction
+                            float threshDelta = alignmentThresh - separationThresh;
+                            float adjustedPercent = ( percent - separationThresh ) / threshDelta;
+
+                            birdVelocity = texture2D( textureVelocity, ref ).xyz;
+
+                            f = ( 0.5 - cos( adjustedPercent * PI_2 ) * 0.5 + 0.5 ) * delta;
+                            velocity += normalize(birdVelocity) * f;
+                        } else {
+
+                            // Attraction / Cohesion - move closer
+                            float threshDelta = 1.0 - alignmentThresh;
+                            float adjustedPercent = ( percent - alignmentThresh ) / threshDelta;
+
+                            f = ( 0.5 - ( cos( adjustedPercent * PI_2 ) * -0.5 + 0.5 ) ) * delta;
+
+                            velocity += normalize(dir) * f;
+                        }
+                    }
+                }
+
+                // this make tends to fly around than down or up
+                // if (velocity.y > 0.) velocity.y *= (1. - 0.2 * delta);
+
+                // Speed Limits
+                if ( length( velocity ) > limit ) {
+                    velocity = normalize( velocity ) * limit;
+                }
+
+                gl_FragColor = vec4( velocity, 1.0 );
+            }
+        </script>
+    <script id="batVertexShader" type="x-shader/x-vertex">
+
+            attribute vec2 reference;
+            attribute float birdVertex;
+
+            attribute vec3 birdColor;
+
+            uniform sampler2D texturePosition;
+            uniform sampler2D textureVelocity;
+
+            varying vec4 vColor;
+            varying float z;
+
+            uniform float time;
+
+            void main() {
+
+                vec4 tmpPos = texture2D( texturePosition, reference );
+                vec3 pos = tmpPos.xyz;
+                vec3 velocity = normalize(texture2D( textureVelocity, reference ).xyz);
+
+                vec3 newPosition = position;
+
+                // flap wings
+                if ( birdVertex == 1.0 || birdVertex == 4.0 ) {
+                    //newPosition.y = sin( tmpPos.w * 0.25 ) * 2.5;
+                    newPosition.y = sin( tmpPos.w * 0.5 ) * 2.5;
+                }
+                
+                newPosition = mat3( modelMatrix ) * newPosition;
+
+                velocity.z *= -1.;
+                float xz = length( velocity.xz );
+                float xyz = 1.;
+                float x = sqrt( 1. - velocity.y * velocity.y );
+
+                float cosry = velocity.x / xz;
+                float sinry = velocity.z / xz;
+
+                float cosrz = x / xyz;
+                float sinrz = velocity.y / xyz;
+
+                mat3 maty =  mat3(
+                    cosry, 0, -sinry,
+                    0    , 1, 0     ,
+                    sinry, 0, cosry
+                );
+
+                mat3 matz =  mat3(
+                    cosrz , sinrz, 0,
+                    -sinrz, cosrz, 0,
+                    0     , 0    , 1
+                );
+
+                newPosition =  maty * matz * newPosition;
+                newPosition += pos;
+
+                z = newPosition.z;
+
+                vColor = vec4( birdColor, 1.0 );
+                gl_Position = projectionMatrix *  viewMatrix  * vec4( newPosition, 1.0 );
+            }
+
+        </script>
+
+    <!-- bat geometry shader -->
+    <script id="batFragShader" type="x-shader/x-fragment">
+            varying vec4 vColor;
+            varying float z;
+
+            uniform vec3 color;
+
+            void main() {
+                //gl_FragColor = vec4( 0.196, 0.275, 0.352, 1.0 );
+                //gl_FragColor = vec4( 0.407, 0.427, 0.451, 1.0 );
+                //gl_FragColor = vec4( 0.2, 0.227, 0.255, 1.0 );
+                gl_FragColor = vec4( 0.0, 0.0, 0.0, 1.0 );
+                
+                //Fake colors for now
+                //float z2 = 0.2 + ( 1000. - z ) / 1000. * vColor.x;
+                //gl_FragColor = vec4( z2, z2, z2, 1.0 );
+            }
+        </script>
+    <script id="vertexShader" type="x-shader/x-vertex">
+            attribute vec3 position;
+            attribute vec3 offset;
+            attribute vec4 color;
+            attribute vec4 orientationStart;
+            attribute vec4 orientationEnd;
+            attribute float timeSpeed;
+            attribute float size;
+            
+            varying vec3 vPosition;
+            varying vec4 vColor;
+    
+            precision highp float;
+            uniform float sineTime;
+            uniform mat4 modelViewMatrix;
+            uniform mat4 projectionMatrix;
+             
+            uniform float time;
+            uniform float opacity;
+    
+            void main(){
+                float sineAdjusted = timeSpeed;
+                
+                vPosition = offset * max(abs(sineAdjusted * 5.0 + 1.0), 0.5) + position;
+                vec4 orientation = normalize(mix(orientationStart, orientationEnd, sineAdjusted));
+                
+                vec3 vcV = cross(orientation.xyz, vPosition);
+                vPosition = vcV * (1.0 * orientation.w) + (cross(orientation.xyz, vcV) * 1.0 + vPosition);
+                vColor = color;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4( vPosition, 1.0 );
+            }
+        </script>
+    <script id="fragmentShader" type="x-shader/x-fragment">
+            precision highp float;
+            uniform float time;
+            uniform float opacity;
+            varying vec3 vPosition;
+            varying vec4 vColor;
+            void main() {
+                vec4 color = vec4( vColor );
+                gl_FragColor = color;
+            }
+        </script>
+
+</head>
+
+<body>
+    <div id="background"></div>
+    <div id="interactive"></div>
+    <div id="content">
+        <!-- TRAILER -->
+        <div id="signup" class="section">
+            <h1 class="animate">SIGN UP</h1>
+            <p class="animate">Interested in Batman: Arkham VR?<br>Sign up to receive email updates about the game's
+                upcoming release.</p>
+            <div class="form animate">
+                <form id="signupForm" autocomplete="false">
+                    <input type="text" name="email" id="email" placeholder="E-MAIL" class="textfield">
+                    <input class="btn" type="submit" value="" />
+                </form>
+                <div class="formLine"></div>
+                <div id="form-error"></div>
+            </div>
+        </div>
+
+        <!-- TRAILER -->
+        <div id="trailer" class="section">
+            <div id="player" class="animate"></div>
+        </div>
+
+        <!-- HOME -->
+        <div id="home" class="section">
+            <h2 class="animate">BATMAN: ARKHAM VR</h2>
+            <p class="animate">COMING OCTOBER 2016 FROM ROCKSTEADY STUDIOS</p>
+        </div>
+    </div>
+    <div id="nav">
+        <div class="navLine left">
+            <div class="navLineInner"></div>
+        </div>
+        <div class="navLine right">
+            <div class="navLineInner"></div>
+        </div>
+        <a href="javascript:changeSection('trailer');" class="navLeft">TRAILER</a>
+        <a href="javascript:changeSection('home');" id="navLogo"><img
+                src="./themes/frontend/kinks/assets/images/logo.png" alt="Batman: VR" /></a>
+        <a href="javascript:changeSection('signup');" class="navRight">SIGN UP</a>
+    </div>
+    <a href="javascript:toggleLegal();" id="legalTrigger">LEGAL</a>
+
+    <div id="menu">
+        <div id="social">
+            <div class="navLine left">
+                <div class="navLineInner"></div>
+            </div>
+            <div class="navLine right">
+                <div class="navLineInner"></div>
+            </div>
+            <a href="https://www.facebook.com/BatmanArkham/" target="_blank" class="icon iconLeft"><img
+                    src="./themes/frontend/kinks/assets/images/icon_facebook.png" alt="Facebook Icon"
+                    class="socialIcon tweenAll_05" /></a>
+            <div id="pulse" class="icon">
+                <img src="./themes/frontend/kinks/assets/images/ring1.png" alt="ring" class="circle" />
+                <img src="./themes/frontend/kinks/assets/images/ring2.png" alt="ring" class="ring" />
+                <img src="./themes/frontend/kinks/assets/images/ring3.png" alt="ring" class="ring" />
+                <img src="./themes/frontend/kinks/assets/images/ring4.png" alt="ring" class="ring" />
+            </div>
+            <a href="http://www.twitter.com/batmanarkham/" target="_blank" class="icon iconRight"><img
+                    src="./themes/frontend/kinks/assets/images/icon_twitter.png" alt="Twitter Icon"
+                    class="socialIcon tweenAll_05" /></a>
+        </div>
+        <div id="menuMiddle">
+            <a href="javascript:changeSection('home');">
+                <div class="menuLine left"></div>
+                <div class="menuLine right"></div>
+                HOME
+            </a>
+            <a href="javascript:changeSection('trailer');">
+                <div class="menuLine left"></div>
+                <div class="menuLine right"></div>
+                TRAILER
+            </a>
+            <a href="javascript:changeSection('signup');">
+                <div class="menuLine left"></div>
+                <div class="menuLine right"></div>
+                SIGN UP
+            </a>
+        </div>
+    </div>
+
+    <div id="hamburger">
+        <img src="./themes/frontend/kinks/assets/images/menu_bar.png" alt="hamburger" id="bar1" class="bar" />
+        <img src="./themes/frontend/kinks/assets/images/menu_bar.png" alt="hamburger" id="bar2" class="bar" />
+        <img src="./themes/frontend/kinks/assets/images/menu_bar.png" alt="hamburger" id="bar3" class="bar" />
+        <img src="./themes/frontend/kinks/assets/images/menu_bar.png" alt="hamburger" id="bar4" class="bar" />
+    </div>
+
+    <a href="javascript:changeSection('home');" id="mobileLogo"><img
+            src="./themes/frontend/kinks/assets/images/logo.png" alt="Batman: VR" /></a>
+
+    <div id="legal">
+        <ul>
+            <li><a href="http://www.warnerbros.com/" target="_blank"><img
+                        src="./themes/frontend/kinks/assets/images/legal/wbgames.png" alt="WB Games"
+                        class="legalIcon" /></a></li>
+            <li><a href="http://www.dccomics.com/" target="_blank"><img
+                        src="./themes/frontend/kinks/assets/images/legal/dc.png" alt="WB Games" class="legalIcon" /></a>
+            </li>
+            <li><a href="http://www.rocksteadyltd.com/" target="_blank"><img
+                        src="./themes/frontend/kinks/assets/images/legal/rocksteady.png" alt="Rocksteady"
+                        class="legalIcon" /></a></li>
+            <li><a href="https://www.playstation.com/" target="_blank"><img
+                        src="./themes/frontend/kinks/assets/images/legal/playstationvr.png" alt="Playstation VR"
+                        class="legalIcon" /></a></li>
+        </ul>
+        <p><img src="./themes/frontend/kinks/assets/images/legal/minilogos.png" alt="Batman Logos" />
+            Batman: Arkham VR software © 2016 Warner Bros. Entertainment Inc. Developed by Rocksteady Studios.
+            BATMAN and all characters, their distinctive likenesses, and related elements are trademarks of DC Comics ©
+            2016. All Rights Reserved.
+            WB GAMES LOGO, WB Shield: TM & © Warner Bros. Entertainment Inc. (s16)</p>
+        <img src="./themes/frontend/kinks/assets/images/legal/close.png" alt="Close" class="close" />
+    </div>
+
+    <div id="preloader">
+        <div id="preloaderInner">LOADING</div>
+    </div>
+    <!--[if lt IE 9]>
+    <![endif]-->
+    <script type="text/javascript">
+        var asset_url = "./themes/frontend/kinks/assets";
+    </script>
+    <!-- Embedded assets so the site works from file:// (browsers block local XHR / WebGL textures) -->
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/3d/bat_explode.obj.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/3d/batman_back_exploded.obj.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/3d/background.jpg.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/gyronorm.complete.min.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/threed.js"></script>
+    <script type="text/javascript" src="./themes/frontend/kinks/assets/js/core.js"></script>
+
+
+</body>
+
+</html>
